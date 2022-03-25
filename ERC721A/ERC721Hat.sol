@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.12;
 
-
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/finance/PaymentSplitter.sol";
@@ -15,13 +14,19 @@ import "./ERC721A.sol";
 but only external owned address can call the contract
 - Calldata special data location that contains functions arguments
 - totalSupply() return the tokens stored by the contracts
+- The diddference between pure and view is that view functions declares that no states will be changed.
+in the other hand pure function declares that no states will be changed or read.
+- keccak256 is a cryptographic function build into solidity, it takes an input and convert it into
+32 bytes hash.
+receive() external payable — for empty calldata (and any value)
+
+- approve or setApprovalForAll allows an address to transfer an NFT to another address
 */
 
 
 contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
 
     using Strings for uint;
-    string public baseURI;
 
     // enum is to define a collection of options availble
     enum Step {
@@ -58,24 +63,41 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
     // to keep track of whitelisted people who minted an NFT
     mapping(address => uint ) public amountNFTsperWalletWhitelistSale;
 
+    // URI when the collection is revealed
+    string public baseURI;
+
+    // URI when the collection not revealed
+    string public notRevealedURI;
+
+    // extention of the file containing the metadata of the NFTS
+    string public baseExtension = ".json";
+
+    // check if the collection has been revealed or not yet
+    bool public revealed = false;
+
+
     constructor (address[] memory _team,
                  uint[] memory _teamShares,
                  bytes32 _merkleRoot,
-                 string memory _baseURI) ERC721A("Happy Hat", "HPT")
+                 string memory _theBaseURI,
+                 string memory _notRevealedURI) ERC721A("Happy Hat", "HPT")
                  PaymentSplitter(_team, _teamShares) {
         
                 merkleRoot =  _merkleRoot;  
-                baseURI = _baseURI;
+                baseURI = _theBaseURI;
+                notRevealedURI = _notRevealedURI;
                 teamLength = _team.length;
+
                 }
 
-    modifier onlyUserCall {
+
+    modifier callerIsUser {
         require(tx.origin == msg.sender, "The caller is another contract");
         _;
     }
 
     // function to mint in the whitelist
-    function whitelistSaleMint(address _account, uint _quantity, bytes32 calldata _proof) onlyUserCall payable external {
+    function whitelistSaleMint(address _account, uint _quantity, bytes32[] calldata _proof) external payable callerIsUser {
             uint price = wlSalePrice;
             require(price != 0, "price cannot be 0");
             require(currentTime() >= saleMintStartTime, "Whitelist mint sale has not start yet");
@@ -84,13 +106,14 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
             // to prevent to user to mint more than 1 NFt with his address
             require(amountNFTsperWalletWhitelistSale[msg.sender] + _quantity <= 1, "You can only mint 1 NFT");
             require(totalSupply() + _quantity <= MAX_WHITELIST, "WHITELIST supply exceeded");
-            require(msg.sender >= price * _quantity, "not enough funds");
+            require(msg.value >= price * _quantity, "not enough funds");
             amountNFTsperWalletWhitelistSale[msg.sender] += _quantity; 
             _safeMint(_account, _quantity);
     }
 
+
     // function to mint in public sale step
-    function publicSaleMint (address _account, uint _quantity) external onlyUserCall payable {
+    function publicSaleMint (address _account, uint _quantity) external callerIsUser payable {
             uint price = publicSalePrice;
             require(price != 0, "price cannot be 0");
             require(sellingStep == Step.PublicSale, "Public Sale is not activated yet");
@@ -112,10 +135,42 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
         saleMintStartTime = _setSaleStartTime;
     }
 
-    // set the base URI
-    function setBaseURI(string memory _baseURI) external onlyOwner {
-        baseURI = _baseURI;
+
+
+    // Change the base URI
+    function setBaseURI(string memory _newBaseURI) external onlyOwner {
+        baseURI = _newBaseURI;
     }
+
+    // return the baseURi of the collection when it revealed
+    function _baseURI() internal view override virtual  returns(string memory) {
+        return baseURI;
+    }
+
+    // change the not revealed URI
+    function setNotRevealURI(string memory _notRevealedURI) external onlyOwner {
+        notRevealedURI = _notRevealedURI;
+    }
+
+    // Allows to set the revealed variable to true
+    function reveal() external onlyOwner {
+        revealed = true;
+    }
+
+    function tokenURI(uint _nftId) public view virtual override returns(string memory) {
+        require(_exists(_nftId), "This NFT doesn't exist");
+        if(revealed == false) {
+            return notRevealedURI;
+        }
+
+        string memory currentBaseURI = _baseURI();
+
+        return bytes(currentBaseURI).length > 0
+                ? string(abi.encodePacked(currentBaseURI, _nftId.toString(), baseExtension))
+                : "";
+
+    }
+
 
     // set step 
     function setStep(uint _step) external onlyOwner {
@@ -127,5 +182,71 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
         return block.timestamp;
     }
 
+    // White list
+    function setMerleRoot(bytes32 _merkleRoot) external onlyOwner {
+        merkleRoot = _merkleRoot;
+    }
+
+    // These functions deal with verification of Merkle trees
+    function _verify(bytes32 _leaf, bytes32[] memory _proof) internal view returns (bool) {
+        return MerkleProof.verify(_proof, merkleRoot, _leaf);
+    }
+
+    function leaf(address _account) internal pure returns(bytes32) {
+        return keccak256(abi.encodePacked(_account));
+    }
+
+    // check if is whiteListed or not
+    function isWhiteListed(address _account, bytes32[] calldata _proof) internal view returns (bool) {
+        return _verify(leaf(_account), _proof);
+    }
+
+    // release the payment
+    function releaseAll() external {
+        for(uint i = 0; i < teamLength; i++) {
+            release(payable(payee(i)));
+        }
+    }
+
+    receive() override external payable {
+        revert ("Only if you mint");
+    }
+
+    
+/*
+
+// _Team
+[
+    "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4",
+    "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2",
+    "0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db"
+]
+
+_TEAMSHARES 
+
+[
+    60,
+    20,
+    20,
+]
+
+_MERKLEROOT : 0x2e95d9b220e054ce1ffa9e0698bcf436f445e88fc75ef6e9126b547e21356c6e
+
+
+proof : 0x04a10bfd00977f54cc3450c9b25c9b3a502a089eba0097ba35fc33c4ea5fcb54,
+0x999bf57501565dbd2fdcea36efa2b9aef8340a8901e3459f4a4c926275d36cdb
+
+
+_proof
+
+[
+    "0x04a10bfd00977f54cc3450c9b25c9b3a502a089eba0097ba35fc33c4ea5fcb54",
+    "0x999bf57501565dbd2fdcea36efa2b9aef8340a8901e3459f4a4c926275d36cdb"
+]
+
+
+*/
+
+     
 
 }
