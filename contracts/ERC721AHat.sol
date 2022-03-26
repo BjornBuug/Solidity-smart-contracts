@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/finance/PaymentSplitter.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "./ERC721A.sol";
+import "erc721a/contracts/ERC721A.sol";
 
 
 /*
@@ -56,7 +56,7 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
     bytes32 public merkleRoot;
 
     // timestamp allows to keep track of a changes of a specific files
-    uint public saleMintStartTime = 1648645200;
+    uint public saleMintStartTime = 1648182953;
 
     uint private teamLength;
 
@@ -103,6 +103,7 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
             require(currentTime() >= saleMintStartTime, "Whitelist mint sale has not start yet");
             require(currentTime() < saleMintStartTime + 300 minutes, "Whitelist sale is finished");
             require(sellingStep == Step.WhitelistSale, "The white list is not activated yet");
+            require(isWhiteListed(msg.sender,_proof), "Not whitelisted");
             // to prevent to user to mint more than 1 NFt with his address
             require(amountNFTsperWalletWhitelistSale[msg.sender] + _quantity <= 1, "You can only mint 1 NFT");
             require(totalSupply() + _quantity <= MAX_WHITELIST, "WHITELIST supply exceeded");
@@ -223,7 +224,7 @@ contract ERC721AHat is Ownable, ERC721A, PaymentSplitter {
 ]
 
 _TEAMSHARES 
-
+2500000000000000
 [
     60,
     20,
@@ -232,10 +233,7 @@ _TEAMSHARES
 
 _MERKLEROOT : 0x2e95d9b220e054ce1ffa9e0698bcf436f445e88fc75ef6e9126b547e21356c6e
 
-
-proof : 0x04a10bfd00977f54cc3450c9b25c9b3a502a089eba0097ba35fc33c4ea5fcb54,
-0x999bf57501565dbd2fdcea36efa2b9aef8340a8901e3459f4a4c926275d36cdb
-
+contract address : 0xfdF898643b1D2F8523a62645058B3BF3F622dF43
 
 _proof
 
@@ -245,8 +243,6 @@ _proof
 ]
 
 
-*/
-
-     
+*/  
 
 }
